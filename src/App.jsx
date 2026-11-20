@@ -305,7 +305,7 @@ export default function App() {
           )}
 
           {currentTab === 'docs' && (
-            <DocsView />
+            <DocsView state={state} onNavigateTab={handleTabChange} />
           )}
         </main>
       </div>
