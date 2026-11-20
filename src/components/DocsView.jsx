@@ -116,7 +116,7 @@ const DEFAULT_DOCS_CONFIG = {
   scheduleStart: '2026-06-10T00:00',
   scheduleEnd: '2026-06-14T23:59',
   teamName: 'Straw Hat',
-  youtubeEmbedUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+  youtubeEmbedUrl: 'https://www.youtube.com/embed/RorJJeAx33A',
   team: INITIAL_TEAM_MEMBERS,
   hiddenSections: []
 };
@@ -126,7 +126,13 @@ export default function DocsView({ state: liveState, onNavigateTab }) {
   const [config, setConfig] = useState(() => {
     try {
       const saved = localStorage.getItem('dokan_docs_config');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.youtubeEmbedUrl === 'https://www.youtube.com/embed/dQw4w9WgXcQ' || !parsed.youtubeEmbedUrl) {
+          parsed.youtubeEmbedUrl = 'https://www.youtube.com/embed/RorJJeAx33A';
+        }
+        return parsed;
+      }
     } catch (e) {
       console.warn('Failed to load docs config:', e);
     }
@@ -685,6 +691,17 @@ ${config.team.map((m, idx) => `${idx + 1}. **${m.name}** — ${m.role} (${m.emai
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                     allowFullScreen
                   />
+                </div>
+                <div className="mt-2.5">
+                  <a
+                    href="https://youtu.be/RorJJeAx33A?si=Gb0c6skEkwyJBQcL"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 text-xs font-semibold transition"
+                  >
+                    <span>Watch Demo on YouTube (https://youtu.be/RorJJeAx33A)</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-brand-600" />
+                  </a>
                 </div>
               </div>
             </div>
