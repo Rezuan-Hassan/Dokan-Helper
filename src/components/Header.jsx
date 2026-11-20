@@ -64,9 +64,11 @@ export default function Header({
         </button>
 
         <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
-          <div className="w-7 h-7 rounded-full bg-brand-100 border border-brand-300 flex items-center justify-center text-brand-700 font-bold text-xs">
-            MR
-          </div>
+          <img 
+            src="/logo.jpeg" 
+            alt="Logo" 
+            className="w-7 h-7 rounded-full object-cover border border-brand-300 shadow-xs" 
+          />
           <div className="hidden md:block text-left text-xs">
             <div className="font-semibold text-slate-800 leading-tight">Bismillah Store</div>
           </div>
