@@ -122,8 +122,12 @@ export default function HitlConfirmationModal({
         {parsedResult.rawPrompt && (
           <div className="px-5 py-2 bg-slate-50 border-b border-slate-100 text-xs text-slate-500 truncate flex items-center justify-between">
             <span className="truncate italic">"{parsedResult.rawPrompt}"</span>
-            <span className="font-semibold text-slate-400 text-[11px] ml-2 flex-shrink-0">
-              {parsedResult.source || 'Smart Match'}
+            <span className={`font-semibold text-[11px] ml-2 flex-shrink-0 px-2 py-0.5 rounded-md ${
+              parsedResult.isOfflineFallback
+                ? 'bg-slate-100 text-slate-600 border border-slate-200'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+            }`}>
+              {parsedResult.provider || parsedResult.source || (parsedResult.isOfflineFallback ? 'Local Parser (Offline Fallback)' : 'AI Verified')}
             </span>
           </div>
         )}

@@ -528,7 +528,7 @@ export async function parseVoiceOrTextCommand(rawInput) {
 
     if (res.ok) {
       const json = await res.json();
-      if (json.success && json.data) {
+      if (json.success && !json.fallback && json.data) {
         const d = json.data;
 
         // Verify or resolve matched inventory
@@ -571,10 +571,13 @@ export async function parseVoiceOrTextCommand(rawInput) {
           title = `Expense: ${finalItemName || 'Shop Operating Expense'}`;
         }
 
+        const modelProvider = json.provider || json.source || 'Gemini 3.8 Flash';
+
         return {
           success: true,
           isOfflineFallback: false,
-          source: 'Gemini 2.5 Flash',
+          provider: modelProvider,
+          source: modelProvider,
           rawPrompt: rawInput.trim(),
           parsed: {
             type: actionType,
@@ -617,11 +620,13 @@ export async function scanReceiptWithGemini(base64Image, mimeType = 'image/jpeg'
 
     if (res.ok) {
       const json = await res.json();
-      if (json.success && json.data) {
+      if (json.success && !json.fallback && json.data) {
         const d = json.data;
         const lineItems = Array.isArray(d.lineItems) && d.lineItems.length > 0 
           ? d.lineItems 
           : [{ name: d.item || 'Scanned Items', qty: d.quantity || '1', total: d.amount || 0 }];
+
+        const modelProvider = json.provider || json.source || 'Gemini 3.8 Flash Vision';
 
         return {
           receiptId: `GEMINI-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -639,7 +644,8 @@ export async function scanReceiptWithGemini(base64Image, mimeType = 'image/jpeg'
           })),
           totalAmount: Number(d.amount) || 0,
           confidence: 99,
-          source: 'Gemini 2.5 Flash Vision'
+          provider: modelProvider,
+          source: modelProvider
         };
       }
     }
@@ -965,7 +971,7 @@ export async function getLiveGeminiInsights(state) {
 
     if (res.ok) {
       const json = await res.json();
-      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+      if (json.success && !json.fallback && Array.isArray(json.data) && json.data.length > 0) {
         return json.data;
       }
     }
@@ -1048,10 +1054,13 @@ export async function askShopQuestion(question, state) {
 
     if (res.ok) {
       const json = await res.json();
-      if (json.success && json.data) {
+      if (json.success && !json.fallback && json.data) {
+        const modelProvider = json.provider || json.source || 'Qwen 3.8 27B (Groq)';
         return {
           success: true,
-          source: json.source || 'Groq Llama 3.3 70B',
+          isOfflineFallback: false,
+          provider: modelProvider,
+          source: modelProvider,
           answer: json.data.answer,
           answerBn: json.data.answerBn,
           keyMetric: json.data.keyMetric,

@@ -59,95 +59,218 @@ async function parseBody(req) {
   });
 }
 
+/**
+ * Robust JSON extractor that handles markdown code blocks or raw JSON
+ */
+function extractJson(text) {
+  if (!text || typeof text !== 'string') return {};
+  const cleaned = text.trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    const match = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (match && match[1]) {
+      try {
+        return JSON.parse(match[1]);
+      } catch (err2) {}
+    }
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+      } catch (err3) {}
+    }
+    const firstBracket = cleaned.indexOf('[');
+    const lastBracket = cleaned.lastIndexOf(']');
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      try {
+        return JSON.parse(cleaned.substring(firstBracket, lastBracket + 1));
+      } catch (err4) {}
+    }
+    throw e;
+  }
+}
+
 // -------------------------------------------------------------
-// STRICT ZOD VALIDATION SCHEMAS
+// STRICT & RESILIENT ZOD VALIDATION SCHEMAS
 // -------------------------------------------------------------
 
 const RequestEnvelopeSchema = z.object({
   action: z.enum(['parse_command', 'scan_receipt', 'generate_insights', 'shop_qa']),
-  payload: z.record(z.any()).optional().default({})
+  payload: z.any().optional().default({})
 });
 
 const ParsedCommandOutputSchema = z.object({
-  type: z.enum(['sale', 'expense', 'baki_add', 'baki_payment', 'restock']).default('sale'),
-  matchedCustomerId: z.string().nullable().default(null),
-  customerName: z.string().nullable().default(null),
-  matchedItemId: z.string().nullable().default(null),
-  itemName: z.string().nullable().default(null),
-  quantity: z.number().nullable().default(null),
-  unit: z.string().nullable().default(null),
-  amount: z.number().default(0),
-  note: z.string().default('')
+  type: z.string().optional().nullable().transform((val) => {
+    const s = String(val || '').toLowerCase().trim();
+    if (['baki_payment', 'shodh', 'cleared'].includes(s)) return 'baki_payment';
+    if (['baki_add', 'baki', 'due', 'credit'].includes(s)) return 'baki_add';
+    if (['expense', 'khoroch', 'cost'].includes(s)) return 'expense';
+    if (['restock', 'purchase', 'wholesale'].includes(s)) return 'restock';
+    return 'sale';
+  }).default('sale'),
+  matchedCustomerId: z.string().optional().nullable().default(null),
+  customerName: z.string().optional().nullable().default(null),
+  matchedItemId: z.string().optional().nullable().default(null),
+  itemName: z.string().optional().nullable().default(null),
+  quantity: z.preprocess((val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const n = Number(val);
+    return isNaN(n) ? null : n;
+  }, z.number().nullable().optional()).default(null),
+  unit: z.string().optional().nullable().default(null),
+  amount: z.preprocess((val) => {
+    if (val === null || val === undefined || val === '') return 0;
+    const n = Number(String(val).replace(/[^0-9.-]+/g, ''));
+    return isNaN(n) ? 0 : n;
+  }, z.number()).default(0),
+  note: z.string().optional().nullable().default('')
 });
 
 const ReceiptScanOutputSchema = z.object({
-  type: z.enum(['sale', 'expense']).default('expense'),
-  item: z.string().default('Scanned Items'),
-  quantity: z.string().default('1'),
-  amount: z.number().default(0),
-  customer: z.string().nullable().default(null),
-  note: z.string().default(''),
-  vendor: z.string().default('Supplier / Counter Memo'),
+  type: z.string().optional().nullable().transform((val) => {
+    const s = String(val || '').toLowerCase().trim();
+    return s === 'sale' ? 'sale' : 'expense';
+  }).default('expense'),
+  item: z.string().optional().nullable().default('Scanned Items'),
+  quantity: z.preprocess(val => String(val ?? '1'), z.string()).default('1'),
+  amount: z.preprocess(val => {
+    const n = Number(String(val ?? 0).replace(/[^0-9.-]+/g, ''));
+    return isNaN(n) ? 0 : n;
+  }, z.number()).default(0),
+  customer: z.string().optional().nullable().default(null),
+  note: z.string().optional().nullable().default(''),
+  vendor: z.string().optional().nullable().default('Supplier / Counter Memo'),
   lineItems: z.array(z.object({
-    name: z.string().default('Item'),
-    qty: z.string().default('1'),
-    total: z.number().default(0)
-  })).default([])
+    name: z.string().optional().nullable().default('Item'),
+    qty: z.preprocess(val => String(val ?? '1'), z.string()).default('1'),
+    total: z.preprocess(val => {
+      const n = Number(String(val ?? 0).replace(/[^0-9.-]+/g, ''));
+      return isNaN(n) ? 0 : n;
+    }, z.number()).default(0)
+  })).optional().default([])
 });
 
 const InsightItemSchema = z.object({
-  id: z.string().default(() => `insight-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`),
-  type: z.enum(['warning', 'tip', 'success']).default('tip'),
-  title: z.string().default(''),
-  desc: z.string().default(''),
-  actionText: z.string().default('View')
+  id: z.string().optional().nullable().default(() => `insight-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`),
+  type: z.string().optional().nullable().transform((val) => {
+    const s = String(val || '').toLowerCase().trim();
+    if (s.includes('warn')) return 'warning';
+    if (s.includes('succ') || s.includes('good')) return 'success';
+    return 'tip';
+  }).default('tip'),
+  title: z.string().optional().nullable().default(''),
+  desc: z.string().optional().nullable().default(''),
+  actionText: z.string().optional().nullable().default('View')
 });
 
 const InsightsOutputSchema = z.array(InsightItemSchema);
 
 const ShopQaOutputSchema = z.object({
-  answer: z.string().default(''),
-  answerBn: z.string().default(''),
-  keyMetric: z.string().default(''),
-  intent: z.string().default('general')
+  answer: z.string().optional().nullable().default(''),
+  answerBn: z.string().optional().nullable().default(''),
+  keyMetric: z.string().optional().nullable().default(''),
+  intent: z.string().optional().nullable().default('general')
 });
 
 // -------------------------------------------------------------
-// GROQ API CALL HELPER
+// MODEL CALLERS WITH FAILOVER CASCADE
 // -------------------------------------------------------------
 
-async function callGroq({ model, messages, temperature = 0.2, jsonMode = true }) {
+const GEMINI_CANDIDATE_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.5-flash',
+  'gemini-3.7-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash'
+];
+
+const GROQ_CANDIDATE_MODELS = [
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile',
+  'llama3-70b-8192'
+];
+
+async function callGeminiCascade(ai, contents, config = { responseMimeType: 'application/json', temperature: 0.1 }) {
+  let lastErr = null;
+  for (const model of GEMINI_CANDIDATE_MODELS) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents,
+        config
+      });
+      const provider = model.includes('3.8') 
+        ? 'Gemini 3.8 Flash' 
+        : (model.includes('3.5') 
+            ? 'Gemini 3.5 Flash' 
+            : (model.includes('3.7') 
+                ? 'Gemini 3.7 Flash' 
+                : (model.includes('2.5') 
+                    ? 'Gemini 2.5 Flash' 
+                    : `Gemini (${model})`)));
+      return {
+        text: response.text || '{}',
+        provider
+      };
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Gemini candidate model ${model} failed:`, err.message);
+    }
+  }
+  throw lastErr || new Error('All Gemini candidate models failed');
+}
+
+async function callGroqCascade(promptText, temperature = 0.2) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey.trim() === '' || apiKey === 'your_groq_api_key_here') {
     throw new Error('GROQ_API_KEY is not configured');
   }
 
-  const payload = {
-    model,
-    messages,
-    temperature
-  };
-  if (jsonMode) {
-    payload.response_format = { type: 'json_object' };
+  let lastErr = null;
+  for (const model of GROQ_CANDIDATE_MODELS) {
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey.trim()}`
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: promptText }],
+          temperature,
+          response_format: { type: 'json_object' }
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Groq HTTP ${response.status}: ${errText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '{}';
+      const provider = model.includes('qwen') 
+        ? 'Qwen 3.8 27B (Groq)' 
+        : (model.includes('gpt-oss') 
+            ? 'GPT-OSS 120B (Groq)' 
+            : (model.includes('llama') 
+                ? 'Llama 3.3 70B (Groq)' 
+                : `Groq (${model})`));
+      return {
+        text: content,
+        provider
+      };
+    } catch (err) {
+      lastErr = err;
+      console.warn(`Groq candidate model ${model} failed:`, err.message);
+    }
   }
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey.trim()}`
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Groq API Error (${response.status}): ${errText}`);
-  }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || '{}';
-  return text;
+  throw lastErr || new Error('All Groq candidate models failed');
 }
 
 // -------------------------------------------------------------
@@ -189,7 +312,10 @@ export default async function handler(req, res) {
 
   if (!hasGemini && !hasGroq) {
     return sendJson(res, 200, {
+      success: false,
       fallback: true,
+      provider: 'Local Parser (Offline Fallback)',
+      source: 'Local Parser (Offline Fallback)',
       message: 'No AI API keys configured on server. Falling back to local offline engine.',
       mode: 'offline_fallback'
     });
@@ -198,7 +324,7 @@ export default async function handler(req, res) {
   const ai = hasGemini ? new GoogleGenAI({ apiKey: geminiKey.trim() }) : null;
 
   // ==========================================================================
-  // ACTION 1: parse_command (Multi-Model: Gemini 2.5 Flash -> Fallback Groq Qwen/Llama)
+  // ACTION 1: parse_command (Primary: Gemini -> Fallback: Groq)
   // ==========================================================================
   if (action === 'parse_command') {
     const text = payload?.text || '';
@@ -239,7 +365,7 @@ PARSING RULES & INSTRUCTIONS:
    - "amount": Extract total Taka amount as a number (e.g. 400).
    - "note": 1-line clean summary of what was detected.
 
-Return strictly JSON matching:
+Return strictly a valid JSON object matching this schema:
 {
   "type": "sale" | "expense" | "baki_add" | "baki_payment" | "restock",
   "matchedCustomerId": string | null,
@@ -252,51 +378,38 @@ Return strictly JSON matching:
   "note": string
 }`;
 
-    // Primary: Gemini 2.5 Flash
+    // 1. Primary: Gemini Cascade
     if (hasGemini) {
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [commandPrompt],
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          }
+        const { text: rawText, provider } = await callGeminiCascade(ai, [commandPrompt], {
+          responseMimeType: 'application/json',
+          temperature: 0.1
         });
-        const rawJson = JSON.parse(response.text || '{}');
+        const rawJson = extractJson(rawText);
         const validated = ParsedCommandOutputSchema.parse(rawJson);
         return sendJson(res, 200, {
           success: true,
-          source: 'Gemini 2.5 Flash',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (geminiErr) {
-        console.warn('Gemini 2.5 Flash failed for parse_command, trying Groq fallback:', geminiErr.message);
+        console.warn('Gemini cascade failed for parse_command, falling back to Groq:', geminiErr.message);
       }
     }
 
-    // Fallback: Groq (Qwen / Llama 3.3 70B)
+    // 2. Fallback: Groq Cascade
     if (hasGroq) {
       try {
-        let rawText = '';
-        try {
-          rawText = await callGroq({
-            model: 'qwen-2.5-32b',
-            messages: [{ role: 'user', content: commandPrompt }],
-            temperature: 0.1
-          });
-        } catch (qwenErr) {
-          rawText = await callGroq({
-            model: 'llama-3.3-70b-versatile',
-            messages: [{ role: 'user', content: commandPrompt }],
-            temperature: 0.1
-          });
-        }
-        const rawJson = JSON.parse(rawText);
+        const { text: rawText, provider } = await callGroqCascade(commandPrompt, 0.1);
+        const rawJson = extractJson(rawText);
         const validated = ParsedCommandOutputSchema.parse(rawJson);
         return sendJson(res, 200, {
           success: true,
-          source: 'Groq (Qwen / Llama Fallback)',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (groqErr) {
@@ -305,7 +418,10 @@ Return strictly JSON matching:
     }
 
     return sendJson(res, 200, {
+      success: false,
       fallback: true,
+      provider: 'Local Parser (Offline Fallback)',
+      source: 'Local Parser (Offline Fallback)',
       message: 'All AI models unavailable. Using local fallback.',
       mode: 'offline_fallback'
     });
@@ -330,7 +446,7 @@ Inspect this image carefully.
 4. Extract the total final amount in Bangladeshi Taka (৳). Notice both Bengali digits (০-৯) and English digits.
 5. Provide a short 1-line summary note.
 
-Return strictly JSON:
+Return strictly a valid JSON object:
 {
   "type": "expense" | "sale",
   "item": string,
@@ -346,27 +462,26 @@ Return strictly JSON:
 
     if (hasGemini) {
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [
-            {
-              inlineData: {
-                mimeType: mimeType || 'image/jpeg',
-                data: cleanBase64,
-              }
-            },
-            receiptPrompt
-          ],
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.1,
-          }
+        const contents = [
+          {
+            inlineData: {
+              mimeType: mimeType || 'image/jpeg',
+              data: cleanBase64,
+            }
+          },
+          receiptPrompt
+        ];
+        const { text: rawText, provider } = await callGeminiCascade(ai, contents, {
+          responseMimeType: 'application/json',
+          temperature: 0.1
         });
-        const rawJson = JSON.parse(response.text || '{}');
+        const rawJson = extractJson(rawText);
         const validated = ReceiptScanOutputSchema.parse(rawJson);
         return sendJson(res, 200, {
           success: true,
-          source: 'Gemini 2.5 Flash Vision',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (geminiErr) {
@@ -375,14 +490,17 @@ Return strictly JSON:
     }
 
     return sendJson(res, 200, {
+      success: false,
       fallback: true,
+      provider: 'Local Parser (Offline Fallback)',
+      source: 'Local Parser (Offline Fallback)',
       message: 'Receipt scan vision fallback triggered.',
       mode: 'offline_fallback'
     });
   }
 
   // ==========================================================================
-  // ACTION 3: generate_insights (Response Cached + Groq Llama 3.3 70B -> Gemini 2.5 Flash)
+  // ACTION 3: generate_insights (Response Cached + Groq -> Gemini)
   // ==========================================================================
   if (action === 'generate_insights') {
     const { summary } = payload || {};
@@ -392,7 +510,9 @@ Return strictly JSON:
     if (insightsCache.has(cacheKey)) {
       return sendJson(res, 200, {
         success: true,
-        source: 'Cache (State-Hash)',
+        fallback: false,
+        provider: 'Memory Cache (Insights)',
+        source: 'Memory Cache (Insights)',
         data: insightsCache.get(cacheKey)
       });
     }
@@ -406,7 +526,7 @@ Here is the current snapshot of today's shop operations:
 - Low Stock Products: ${JSON.stringify(summary?.lowStockItems || [])}
 
 Provide exactly 2 to 3 practical, friendly, high-impact business insights or recommendations tailored for a local Bangladeshi store.
-Format as JSON object with an "insights" array:
+Format your answer strictly as a JSON object with an "insights" array:
 {
   "insights": [
     {
@@ -419,46 +539,42 @@ Format as JSON object with an "insights" array:
   ]
 }`;
 
-    // Primary: Groq Llama 3.3 70B
+    // 1. Primary: Groq Cascade
     if (hasGroq) {
       try {
-        const rawText = await callGroq({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: insightsPrompt }],
-          temperature: 0.3
-        });
-        const parsed = JSON.parse(rawText);
-        const list = Array.isArray(parsed) ? parsed : (parsed.insights || []);
+        const { text: rawText, provider } = await callGroqCascade(insightsPrompt, 0.3);
+        const parsed = extractJson(rawText);
+        const list = Array.isArray(parsed) ? parsed : (parsed.insights || parsed.recommendations || []);
         const validated = InsightsOutputSchema.parse(list);
         insightsCache.set(cacheKey, validated);
         return sendJson(res, 200, {
           success: true,
-          source: 'Groq Llama 3.3 70B',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (groqErr) {
-        console.warn('Groq Llama 3.3 failed for generate_insights, trying Gemini fallback:', groqErr.message);
+        console.warn('Groq failed for generate_insights, trying Gemini fallback:', groqErr.message);
       }
     }
 
-    // Fallback: Gemini 2.5 Flash
+    // 2. Fallback: Gemini Cascade
     if (hasGemini) {
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [insightsPrompt],
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.3,
-          }
+        const { text: rawText, provider } = await callGeminiCascade(ai, [insightsPrompt], {
+          responseMimeType: 'application/json',
+          temperature: 0.3
         });
-        const parsed = JSON.parse(response.text || '{}');
-        const list = Array.isArray(parsed) ? parsed : (parsed.insights || []);
+        const parsed = extractJson(rawText);
+        const list = Array.isArray(parsed) ? parsed : (parsed.insights || parsed.recommendations || []);
         const validated = InsightsOutputSchema.parse(list);
         insightsCache.set(cacheKey, validated);
         return sendJson(res, 200, {
           success: true,
-          source: 'Gemini 2.5 Flash',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (geminiErr) {
@@ -467,14 +583,17 @@ Format as JSON object with an "insights" array:
     }
 
     return sendJson(res, 200, {
+      success: false,
       fallback: true,
+      provider: 'Local Rules Engine',
+      source: 'Local Rules Engine',
       message: 'AI unavailable for insights, using local rules.',
       mode: 'offline_fallback'
     });
   }
 
   // ==========================================================================
-  // ACTION 4: shop_qa ("Ask Your Shop" Hybrid Q&A - Groq Llama 3.3 70B -> Gemini 2.5 Flash)
+  // ACTION 4: shop_qa ("Ask Your Shop" Hybrid Q&A - Groq -> Gemini)
   // ==========================================================================
   if (action === 'shop_qa') {
     const { question, retrievedContext } = payload || {};
@@ -495,7 +614,7 @@ GUIDELINES:
 1. Provide a direct, crisp, helpful answer with exact numbers (in ৳ Taka) and names.
 2. Provide both a clear English response AND an authentic, natural Bengali response ("সহজ বাংলা").
 3. Extract the single most important summary metric (e.g. "৳ ৩,৪০০ বাকি (করিম স্টোর)" or "২টি পণ্য স্টকে কম" or "আজকের লাভ ৳ ১,৪৫০").
-4. Return strictly a JSON object:
+4. Return strictly a valid JSON object matching:
 {
   "answer": "Clear English answer stating the exact figure, person, or stock situation.",
   "answerBn": "সহজ বাংলায় স্পষ্ট ও সরাসরি উত্তর।",
@@ -503,42 +622,38 @@ GUIDELINES:
   "intent": "baki" | "inventory" | "finance" | "general"
 }`;
 
-    // Primary: Groq Llama 3.3 70B
+    // 1. Primary: Groq Cascade
     if (hasGroq) {
       try {
-        const rawText = await callGroq({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: qaPrompt }],
-          temperature: 0.2
-        });
-        const parsed = JSON.parse(rawText);
+        const { text: rawText, provider } = await callGroqCascade(qaPrompt, 0.2);
+        const parsed = extractJson(rawText);
         const validated = ShopQaOutputSchema.parse(parsed);
         return sendJson(res, 200, {
           success: true,
-          source: 'Groq Llama 3.3 70B',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (groqErr) {
-        console.warn('Groq Llama 3.3 failed for shop_qa, trying Gemini fallback:', groqErr.message);
+        console.warn('Groq failed for shop_qa, trying Gemini fallback:', groqErr.message);
       }
     }
 
-    // Fallback: Gemini 2.5 Flash
+    // 2. Fallback: Gemini Cascade
     if (hasGemini) {
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: [qaPrompt],
-          config: {
-            responseMimeType: 'application/json',
-            temperature: 0.2,
-          }
+        const { text: rawText, provider } = await callGeminiCascade(ai, [qaPrompt], {
+          responseMimeType: 'application/json',
+          temperature: 0.2
         });
-        const parsed = JSON.parse(response.text || '{}');
+        const parsed = extractJson(rawText);
         const validated = ShopQaOutputSchema.parse(parsed);
         return sendJson(res, 200, {
           success: true,
-          source: 'Gemini 2.5 Flash',
+          fallback: false,
+          provider,
+          source: provider,
           data: validated
         });
       } catch (geminiErr) {
@@ -547,7 +662,10 @@ GUIDELINES:
     }
 
     return sendJson(res, 200, {
+      success: false,
       fallback: true,
+      provider: 'Local Parser (Offline Fallback)',
+      source: 'Local Parser (Offline Fallback)',
       message: 'AI unavailable for Q&A, using local hybrid retrieval answer.',
       mode: 'offline_fallback'
     });
