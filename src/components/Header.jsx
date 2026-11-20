@@ -13,6 +13,7 @@ export default function Header({
     'inventory': 'Inventory',
     'baki': 'Customer Dues (Baki)',
     'transactions': 'Transactions Ledger',
+    'docs': 'Technical Docs & Architecture',
   };
 
   const title = tabTitles[currentTab] || 'Dokan Helper';

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import CommandBar from './components/CommandBar';
@@ -8,6 +8,8 @@ import DashboardView from './components/DashboardView';
 import InventoryView from './components/InventoryView';
 import BakiView from './components/BakiView';
 import TransactionsView from './components/TransactionsView';
+import ShopQaPanel from './components/ShopQaPanel';
+import DocsView from './components/DocsView';
 import Toast from './components/Toast';
 
 import { 
@@ -23,9 +25,36 @@ import {
 
 export default function App() {
   const [state, setState] = useState(() => getDokanState());
-  const [currentTab, setCurrentTab] = useState('dashboard');
+  const [currentTab, setCurrentTab] = useState(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/docs') {
+      return 'docs';
+    }
+    return 'dashboard';
+  });
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [toast, setToast] = useState(null);
+
+  const handleTabChange = (tabId) => {
+    setCurrentTab(tabId);
+    if (typeof window !== 'undefined') {
+      const targetPath = tabId === 'docs' ? '/docs' : '/';
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState(null, '', targetPath);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.location.pathname === '/docs') {
+        setCurrentTab('docs');
+      } else {
+        setCurrentTab('dashboard');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // AI & HITL Modals
   const [isProcessingCommand, setIsProcessingCommand] = useState(false);
@@ -162,7 +191,7 @@ export default function App() {
       {/* Sidebar */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleTabChange}
         isMobileOpen={isMobileOpen}
         setIsMobileOpen={setIsMobileOpen}
         onResetData={handleResetData}
@@ -195,20 +224,23 @@ export default function App() {
           {currentTab === 'dashboard' && (
             <DashboardView
               state={state}
-              onNavigateTab={setCurrentTab}
+              onNavigateTab={handleTabChange}
             />
           )}
 
           {currentTab === 'ai-assistant' && (
             <div className="space-y-6">
+              {/* Ask Your Shop AI Q&A Panel */}
+              <ShopQaPanel state={state} />
+
               <div className="glass-panel rounded-3xl p-6 shadow-glass">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <h2 className="text-base font-bold text-slate-800">
-                      Context-Aware Smart Engine
+                      Context-Aware Multi-Model Engine
                     </h2>
                     <p className="text-xs text-slate-400">
-                      Real-time inventory stock matching & customer credit ledger linking
+                      Real-time inventory stock matching, debtor ledger linking & Groq/Gemini routing
                     </p>
                   </div>
                   <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
@@ -218,26 +250,26 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="p-4 rounded-2xl bg-white border border-slate-200/80">
-                    <span className="text-xl mb-1 block">🔒</span>
-                    <div className="font-bold text-xs text-slate-800">Server-Side Proxy Security</div>
+                    <span className="text-xl mb-1 block">⚡</span>
+                    <div className="font-bold text-xs text-slate-800">Multi-Model Routing</div>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      API key is held exclusively in the secure server environment. Zero client bundle exposure.
+                      Gemini 2.5 Flash for multimodal parsing & Groq Llama 3.3 70B for lightning-fast business Q&A.
                     </p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-white border border-slate-200/80">
                     <span className="text-xl mb-1 block">🎙️</span>
-                    <div className="font-bold text-xs text-slate-800">Multilingual Bangla Parser</div>
+                    <div className="font-bold text-xs text-slate-800">Continuous Bangla Voice</div>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      Converts Bengali voice & Banglish text including Bengali numerals (০-৯) into structured JSON.
+                      Web Speech recognition streams continuous transcripts with Bengali numeral translation (০-৯).
                     </p>
                   </div>
 
                   <div className="p-4 rounded-2xl bg-white border border-slate-200/80">
-                    <span className="text-xl mb-1 block">🧾</span>
-                    <div className="font-bold text-xs text-slate-800">Multimodal Receipt Vision</div>
+                    <span className="text-xl mb-1 block">🛡️</span>
+                    <div className="font-bold text-xs text-slate-800">Zod Schema Guardrails</div>
                     <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                      Upload actual cash memo photos to extract line items and total Taka amounts for review.
+                      Every payload and AI response is strictly validated against Zod schemas before state mutation.
                     </p>
                   </div>
                 </div>
@@ -245,7 +277,7 @@ export default function App() {
 
               <DashboardView
                 state={state}
-                onNavigateTab={setCurrentTab}
+                onNavigateTab={handleTabChange}
               />
             </div>
           )}
@@ -270,6 +302,10 @@ export default function App() {
             <TransactionsView
               state={state}
             />
+          )}
+
+          {currentTab === 'docs' && (
+            <DocsView />
           )}
         </main>
       </div>

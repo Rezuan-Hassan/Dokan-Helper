@@ -7,7 +7,8 @@ import {
   Receipt, 
   RotateCcw, 
   Store, 
-  MapPin
+  MapPin,
+  FileText
 } from 'lucide-react';
 import { formatTaka } from '../services/dokanApi';
 
@@ -25,6 +26,7 @@ export default function Sidebar({
     { id: 'inventory', label: 'Inventory', icon: Package, count: state.inventory.filter(i => i.stock <= i.lowStockThreshold).length },
     { id: 'baki', label: 'Baki / Dues', icon: BookOpen, count: state.customersBaki.filter(c => c.totalDue > 0).length },
     { id: 'transactions', label: 'Transactions', icon: Receipt },
+    { id: 'docs', label: 'Docs & API', icon: FileText },
   ];
 
   const totalDue = state.customersBaki.reduce((sum, c) => sum + (c.totalDue || 0), 0);

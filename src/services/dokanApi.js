@@ -8,6 +8,8 @@
  * so Gemini links to exact existing record IDs instead of duplicating.
  */
 
+import { hybridRetrieve } from '../utils/hybridRetrieval';
+
 // Bengali to English digit translation map
 const BENGALI_DIGIT_MAP = {
   '০': '0', '১': '1', '২': '2', '৩': '3', '৪': '4',
@@ -1012,3 +1014,182 @@ export function generateBusinessInsights(state) {
 
   return insights;
 }
+
+// -------------------------------------------------------------
+// "ASK YOUR SHOP" AI Q&A (Hybrid Retrieval + Multi-Model AI)
+// -------------------------------------------------------------
+
+/**
+ * Handles shopkeeper questions (Bangla, Banglish, English) using
+ * lightweight client-side hybrid retrieval + server-side multi-model Q&A
+ * (Groq Llama 3.3 70B -> Gemini 2.5 Flash -> Local deterministic fallback).
+ */
+export async function askShopQuestion(question, state) {
+  if (!question || !question.trim()) {
+    throw new Error("No question provided");
+  }
+
+  // 1. Client-side Hybrid Retrieval
+  const retrievedContext = hybridRetrieve(question, state);
+
+  // 2. Query Multi-Model Backend
+  try {
+    const res = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'shop_qa',
+        payload: {
+          question: question.trim(),
+          retrievedContext
+        }
+      })
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        return {
+          success: true,
+          source: json.source || 'Groq Llama 3.3 70B',
+          answer: json.data.answer,
+          answerBn: json.data.answerBn,
+          keyMetric: json.data.keyMetric,
+          intent: json.data.intent || retrievedContext.primaryIntent,
+          retrievedContext
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("AI Shop Q&A failed, falling back to local hybrid answer:", err);
+  }
+
+  // 3. Deterministic Local Hybrid Fallback
+  return generateDeterministicQaAnswer(question, retrievedContext);
+}
+
+/**
+ * Deterministic local fallback answer when both AI endpoints are offline
+ */
+function generateDeterministicQaAnswer(question, retrievedContext) {
+  const { primaryIntent, metricsSummary, relevantBaki, relevantInventory } = retrievedContext;
+
+  if (primaryIntent === 'baki') {
+    const topDebtor = relevantBaki[0];
+    if (topDebtor) {
+      return {
+        success: true,
+        source: 'Hybrid Retrieval Engine (Local)',
+        answer: `The customer with the highest outstanding due is ${topDebtor.customerName} with ${formatTaka(topDebtor.totalDue)}. Total store dues are ${formatTaka(metricsSummary.totalStoreBaki)} across ${metricsSummary.pendingDebtorCount} customers.`,
+        answerBn: `সবচেয়ে বেশি বাকি রয়েছে ${topDebtor.customerNameBn || topDebtor.customerName}-এর কাছে: ${formatTaka(topDebtor.totalDue)}। মোট বাকি ${formatTaka(metricsSummary.totalStoreBaki)}।`,
+        keyMetric: `${formatTaka(topDebtor.totalDue)} Due (${topDebtor.customerName})`,
+        intent: 'baki',
+        retrievedContext
+      };
+    }
+    return {
+      success: true,
+      source: 'Hybrid Retrieval Engine (Local)',
+      answer: `Total customer dues are currently ${formatTaka(metricsSummary.totalStoreBaki)}.`,
+      answerBn: `দোকানের বর্তমান মোট বাকি ${formatTaka(metricsSummary.totalStoreBaki)}।`,
+      keyMetric: `${formatTaka(metricsSummary.totalStoreBaki)} Total Due`,
+      intent: 'baki',
+      retrievedContext
+    };
+  }
+
+  if (primaryIntent === 'inventory') {
+    if (relevantInventory.length > 0) {
+      const itemsList = relevantInventory.map(i => `${i.name} (${i.stock} ${i.unit})`).join(', ');
+      return {
+        success: true,
+        source: 'Hybrid Retrieval Engine (Local)',
+        answer: `There are ${relevantInventory.length} products with stock below threshold: ${itemsList}.`,
+        answerBn: `বর্তমানে ${relevantInventory.length}টি পণ্যের স্টক কম: ${itemsList}। দ্রুত পাইকারি অর্ডার করা প্রয়োজন।`,
+        keyMetric: `${relevantInventory.length} Items Low Stock`,
+        intent: 'inventory',
+        retrievedContext
+      };
+    }
+    return {
+      success: true,
+      source: 'Hybrid Retrieval Engine (Local)',
+      answer: `All catalog products are currently above their minimum stock thresholds.`,
+      answerBn: `সব পণ্যের পর্যাপ্ত স্টক আছে, কোনো ঘাটতি নেই।`,
+      keyMetric: `Stock Healthy`,
+      intent: 'inventory',
+      retrievedContext
+    };
+  }
+
+  if (primaryIntent === 'finance') {
+    return {
+      success: true,
+      source: 'Hybrid Retrieval Engine (Local)',
+      answer: `Today's net profit is ${formatTaka(metricsSummary.todayNetProfit)} (Sales: ${formatTaka(metricsSummary.todaySales)} minus Expenses: ${formatTaka(metricsSummary.todayExpenses)}).`,
+      answerBn: `আজকের নিট লাভ ${formatTaka(metricsSummary.todayNetProfit)} (বিক্রি ${formatTaka(metricsSummary.todaySales)} এবং খরচ ${formatTaka(metricsSummary.todayExpenses)})।`,
+      keyMetric: `${formatTaka(metricsSummary.todayNetProfit)} Net Profit`,
+      intent: 'finance',
+      retrievedContext
+    };
+  }
+
+  return {
+    success: true,
+    source: 'Hybrid Retrieval Engine (Local)',
+    answer: `Today's shop balance: Sales ${formatTaka(metricsSummary.todaySales)}, Expenses ${formatTaka(metricsSummary.todayExpenses)}, Total Baki ${formatTaka(metricsSummary.totalStoreBaki)}.`,
+    answerBn: `আজকের হিসাব: মোট বিক্রি ${formatTaka(metricsSummary.todaySales)}, খরচ ${formatTaka(metricsSummary.todayExpenses)}, মোট বাকি ${formatTaka(metricsSummary.totalStoreBaki)}।`,
+    keyMetric: `${formatTaka(metricsSummary.todaySales)} Sales`,
+    intent: 'general',
+    retrievedContext
+  };
+}
+
+// -------------------------------------------------------------
+// 1-CLICK CSV EXPORT WITH UTF-8 BOM (\uFEFF) FOR EXCEL/SHEETS
+// -------------------------------------------------------------
+
+/**
+ * Downloads CSV content as a file with UTF-8 BOM so Bengali script renders properly
+ */
+export function exportToCsvWithBom(filename, csvContent) {
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Exports transaction ledger to CSV with Bengali support
+ */
+export function exportTransactionsCsv(transactions) {
+  const headers = "Transaction ID,Type,Description,Customer,Payment Method,Amount (BDT),Date Time\n";
+  const rows = transactions.map(t => {
+    const desc = (t.description || '').replace(/"/g, '""');
+    const cust = (t.customer || '').replace(/"/g, '""');
+    const time = (t.timestamp || '').replace(/"/g, '""');
+    return `"${t.id}","${t.type}","${desc}","${cust}","${t.paymentMethod || 'Cash'}","${t.amount}","${time}"`;
+  }).join("\n");
+  exportToCsvWithBom('dokan-helper-transactions.csv', headers + rows);
+}
+
+/**
+ * Exports current inventory catalog to CSV with Bengali support
+ */
+export function exportInventoryCsv(inventory) {
+  const headers = "SKU,Product Name,Bengali Name,Category,Current Stock,Unit,Cost Price (BDT),Selling Price (BDT),Inventory Value (BDT),Status\n";
+  const rows = inventory.map(item => {
+    const isLow = item.stock <= item.lowStockThreshold;
+    const totalVal = Math.round(item.stock * item.sellingPrice);
+    const name = (item.name || '').replace(/"/g, '""');
+    const nameBn = (item.nameBn || '').replace(/"/g, '""');
+    return `"${item.sku}","${name}","${nameBn}","${item.category}","${item.stock}","${item.unit}","${item.costPrice}","${item.sellingPrice}","${totalVal}","${isLow ? 'Low Stock' : 'Healthy'}"`;
+  }).join("\n");
+  exportToCsvWithBom('dokan-helper-inventory.csv', headers + rows);
+}
+

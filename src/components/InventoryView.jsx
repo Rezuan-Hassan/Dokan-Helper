@@ -9,9 +9,10 @@ import {
   DollarSign, 
   CheckCircle,
   Filter,
-  Layers
+  Layers,
+  Download
 } from 'lucide-react';
-import { formatTaka } from '../services/dokanApi';
+import { formatTaka, exportInventoryCsv } from '../services/dokanApi';
 
 export default function InventoryView({ state, onUpdateStock }) {
   const [search, setSearch] = useState('');
@@ -114,6 +115,15 @@ export default function InventoryView({ state, onUpdateStock }) {
                 {cat}
               </button>
             ))}
+
+            <button
+              onClick={() => exportInventoryCsv(filteredItems)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap bg-slate-100 hover:bg-slate-200 text-slate-700 transition ml-2 border border-slate-200/80 shadow-xs"
+              title="Download inventory CSV with Bengali support"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-500" />
+              <span>Export CSV</span>
+            </button>
           </div>
         </div>
 

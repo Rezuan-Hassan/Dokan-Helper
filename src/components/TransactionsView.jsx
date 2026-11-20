@@ -10,7 +10,7 @@ import {
   Calendar,
   CreditCard
 } from 'lucide-react';
-import { formatTaka } from '../services/dokanApi';
+import { formatTaka, exportTransactionsCsv } from '../services/dokanApi';
 
 export default function TransactionsView({ state }) {
   const [search, setSearch] = useState('');
@@ -37,16 +37,7 @@ export default function TransactionsView({ state }) {
     .reduce((sum, t) => sum + t.amount, 0);
 
   const handleExportCSV = () => {
-    const headers = "ID,Type,Description,Customer,PaymentMethod,Amount,Time\n";
-    const rows = filteredList.map(t => 
-      `"${t.id}","${t.type}","${t.description}","${t.customer || ''}","${t.paymentMethod}","${t.amount}","${t.timestamp}"`
-    ).join("\n");
-    const blob = new Blob([headers + rows], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `dokan_ledger_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+    exportTransactionsCsv(filteredList);
   };
 
   return (
