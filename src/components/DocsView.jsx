@@ -79,7 +79,7 @@ const INITIAL_TEAM_MEMBERS = [
     role: 'Global Market Strategist & NRB Partnerships Lead',
     email: '252-15-619@diu.edu.bd',
     photo: '/team/member2.jpg',
-    isNrb: true,
+    isNrb: false,
     bio: 'Non-Resident Bangladeshi (NRB) diaspora partnerships, cross-border remittance-backed merchant credit, and international SaaS growth.'
   },
   {
@@ -97,7 +97,7 @@ const INITIAL_TEAM_MEMBERS = [
     role: 'Frontend Architect & Mobile Experience Lead',
     email: 'sompodpubg@gmail.com',
     photo: '/team/member4.jpg',
-    isNrb: false,
+    isNrb: true,
     bio: 'Crafted liquid-glass responsive UI surfaces, Web Speech recognition state machines, and real-time ledger animations.'
   },
   {
@@ -130,6 +130,17 @@ export default function DocsView({ state: liveState, onNavigateTab }) {
         const parsed = JSON.parse(saved);
         if (parsed.youtubeEmbedUrl === 'https://www.youtube.com/embed/dQw4w9WgXcQ' || !parsed.youtubeEmbedUrl) {
           parsed.youtubeEmbedUrl = 'https://www.youtube.com/embed/RorJJeAx33A';
+        }
+        if (Array.isArray(parsed.team)) {
+          parsed.team = parsed.team.map(m => {
+            if (m.name && m.name.includes('Sabbir')) {
+              return { ...m, isNrb: false };
+            }
+            if (m.name && (m.name.includes('Musfiqur') || m.name.includes('Mushfiqur') || m.name.includes('Sompod') || m.name.includes('Sampad'))) {
+              return { ...m, isNrb: true };
+            }
+            return m;
+          });
         }
         return parsed;
       }
