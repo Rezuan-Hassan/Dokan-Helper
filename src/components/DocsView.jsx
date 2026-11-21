@@ -76,11 +76,11 @@ const INITIAL_TEAM_MEMBERS = [
   {
     id: 'team-3',
     name: 'Md. Sabbir Ahmed',
-    role: 'Global Market Strategist & NRB Partnerships Lead',
+    role: 'Frontend Architect & Mobile Experience Lead',
     email: '252-15-619@diu.edu.bd',
     photo: '/team/member2.jpg',
     isNrb: false,
-    bio: 'Non-Resident Bangladeshi (NRB) diaspora partnerships, cross-border remittance-backed merchant credit, and international SaaS growth.'
+    bio: 'Crafted liquid-glass responsive UI surfaces, Web Speech recognition state machines, and real-time ledger animations.'
   },
   {
     id: 'team-4',
@@ -94,11 +94,11 @@ const INITIAL_TEAM_MEMBERS = [
   {
     id: 'team-5',
     name: 'Musfiqur Rahman Khan Sompod',
-    role: 'Frontend Architect & Mobile Experience Lead',
+    role: 'Global Market Strategist & NRB Partnerships Lead',
     email: 'sompodpubg@gmail.com',
     photo: '/team/member4.jpg',
     isNrb: true,
-    bio: 'Crafted liquid-glass responsive UI surfaces, Web Speech recognition state machines, and real-time ledger animations.'
+    bio: 'Non-Resident Bangladeshi (NRB) diaspora partnerships, cross-border remittance-backed merchant credit, and international SaaS growth.'
   },
   {
     id: 'team-6',
@@ -134,10 +134,20 @@ export default function DocsView({ state: liveState, onNavigateTab }) {
         if (Array.isArray(parsed.team)) {
           parsed.team = parsed.team.map(m => {
             if (m.name && m.name.includes('Sabbir')) {
-              return { ...m, isNrb: false };
+              return {
+                ...m,
+                role: 'Frontend Architect & Mobile Experience Lead',
+                bio: 'Crafted liquid-glass responsive UI surfaces, Web Speech recognition state machines, and real-time ledger animations.',
+                isNrb: false
+              };
             }
             if (m.name && (m.name.includes('Musfiqur') || m.name.includes('Mushfiqur') || m.name.includes('Sompod') || m.name.includes('Sampad'))) {
-              return { ...m, isNrb: true };
+              return {
+                ...m,
+                role: 'Global Market Strategist & NRB Partnerships Lead',
+                bio: 'Non-Resident Bangladeshi (NRB) diaspora partnerships, cross-border remittance-backed merchant credit, and international SaaS growth.',
+                isNrb: true
+              };
             }
             return m;
           });
